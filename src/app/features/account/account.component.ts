@@ -1,0 +1,180 @@
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { CurrencyPipe, DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { MatTabsModule } from '@angular/material/tabs';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+import { OrderService } from '../../core/services/order.service';
+import { AuthService } from '../../core/services/auth.service';
+import { ProductService } from '../../core/services/product.service';
+import { OrderResponse, User, Product } from '../../core/models';
+
+@Component({
+  selector: 'app-account',
+  imports: [ReactiveFormsModule, CurrencyPipe, DatePipe, RouterLink, MatTabsModule, MatProgressSpinnerModule],
+  templateUrl: './account.component.html',
+  styleUrls: ['./account.component.scss']
+})
+export class AccountComponent implements OnInit {
+  orders: OrderResponse[] = [];
+  loadingOrders = false;
+  expandedOrderId: number | null = null;
+  profileForm: FormGroup;
+  saving = false;
+  loadingProfile = true;
+
+  /** Keyed by productId for O(1) lookup in the template */
+  productMap: Record<number, Product> = {};
+
+  statusColors: Record<string, string> = {
+    PENDING: '#ff9800', CONFIRMED: '#00bcd4', SHIPPED: '#9c27b0',
+    DELIVERED: '#4caf50', CANCELLED: '#f44336'
+  };
+
+  constructor(
+    private fb: FormBuilder,
+    private orderService: OrderService,
+    private authService: AuthService,
+    private productService: ProductService,
+    private snack: MatSnackBar,
+    private cdr: ChangeDetectorRef
+  ) {
+    this.profileForm = this.fb.group({
+      name:        ['', [Validators.required, Validators.minLength(2)]],
+      email:       [{ value: '', disabled: true }],
+      phone:       [''],
+      addressLine: ['', Validators.required],
+      city:        ['', Validators.required],
+      state:       ['', Validators.required],
+      pincode:     ['', [Validators.required, Validators.pattern(/^[0-9]{6}$/)]]
+    });
+  }
+
+  ngOnInit(): void {
+    const cached = this.authService.currentUser;
+    if (cached) {
+      this.patchForm(cached);
+      this.loadingProfile = false;
+      this.fetchOrders(cached.id || cached.email);
+    }
+
+    const email = cached?.email ?? this.authService.getCurrentUserEmail();
+
+    if (email) {
+      this.authService.fetchUser(email).subscribe({
+        next: (res) => {
+          this.patchForm(res.id);
+          this.loadingProfile = false;
+          const userId = res.id.id || res.id.email;
+          this.fetchOrders(userId);
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          console.error('Failed to fetch user profile:', err);
+          this.loadingProfile = false;
+          if (email) this.fetchOrders(email);
+          this.cdr.detectChanges();
+        }
+      });
+    } else {
+      this.loadingProfile = false;
+    }
+  }
+
+  private fetchOrders(userId: string): void {
+    if (!userId) return;
+    this.loadingOrders = true;
+    this.orderService.getMyOrders(userId).subscribe({
+      next: (orders) => {
+        this.orders = orders;
+        this.loadingOrders = false;
+        this.cdr.detectChanges();
+        this.fetchProductsForOrders(orders);
+      },
+      error: (err) => {
+        console.error('Failed to fetch orders:', err);
+        this.loadingOrders = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** Collect every unique productId across all orders, then fetch in parallel */
+  private fetchProductsForOrders(orders: OrderResponse[]): void {
+    const ids = [...new Set(orders.flatMap(o => o.items.map(i => i.productId)))];
+    if (!ids.length) return;
+
+    const requests = ids.map(id =>
+      this.productService.getProductById(id).pipe(catchError(() => of(null)))
+    );
+
+    forkJoin(requests).subscribe(products => {
+      products.forEach(p => { if (p) this.productMap[p.id] = p; });
+      this.cdr.detectChanges();
+    });
+  }
+
+  private patchForm(u: User): void {
+    this.profileForm.patchValue({
+      name:        u.name         ?? '',
+      email:       u.email        ?? '',
+      phone:       u.phone        ?? '',
+      addressLine: u.addressLine  ?? '',
+      city:        u.city         ?? '',
+      state:       u.state        ?? '',
+      pincode:     u.pincode      ?? ''
+    });
+  }
+
+  get userInitials(): string {
+    const name = this.profileForm.get('name')?.value as string ?? '';
+    return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  }
+
+  saveProfile(): void {
+    if (this.profileForm.invalid) { this.profileForm.markAllAsTouched(); return; }
+    this.saving = true;
+
+    const v = this.profileForm.getRawValue() as {
+      name: string; email: string; phone: string;
+      addressLine: string; city: string; state: string; pincode: string;
+    };
+
+    this.authService.updateUser({
+      name:        v.name,
+      email:       v.email,
+      phone:       v.phone,
+      addressLine: v.addressLine,
+      city:        v.city,
+      state:       v.state,
+      pincode:     v.pincode
+    }).subscribe({
+      next: (res) => {
+        this.saving = false;
+        this.cdr.detectChanges();
+        if (res.status === 'success') {
+          this.snack.open('Profile updated successfully!', 'OK', { duration: 3000 });
+        } else {
+          this.snack.open(res.message ?? 'Failed to update profile.', 'Close', { duration: 4000 });
+        }
+      },
+      error: (err) => {
+        this.saving = false;
+        this.cdr.detectChanges();
+        const msg = err?.error?.message ?? 'Failed to update profile.';
+        this.snack.open(msg, 'Close', { duration: 4000 });
+      }
+    });
+  }
+
+  toggleOrder(id: number): void {
+    this.expandedOrderId = this.expandedOrderId === id ? null : id;
+  }
+
+  logout(): void {
+    this.authService.logout();
+  }
+}

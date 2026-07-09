@@ -1,0 +1,299 @@
+@if (loading$ | async) {
+  <div class="container detail-skeleton">
+    <div class="skeleton-gallery"></div>
+    <div class="skeleton-info">
+      @for (i of [1,2,3,4,5]; track i) {
+        <div class="skeleton-line" [style.width.%]="[90,50,70,40,100][i-1]"></div>
+      }
+    </div>
+  </div>
+} @else if (product$ | async; as product) {
+  <!-- Breadcrumb -->
+  <div class="breadcrumb-bar">
+    <div class="container">
+      <a routerLink="/">Home</a>
+      <span class="material-icons">chevron_right</span>
+      <a [routerLink]="['/category', product.category]">{{ product.category }}</a>
+      <span class="material-icons">chevron_right</span>
+      <span class="current">{{ product.name }}</span>
+    </div>
+  </div>
+
+  <div class="container detail-layout">
+    <!-- Gallery -->
+    <div class="gallery">
+      <div class="main-image">
+        <img [src]="product.images[selectedImage]" [alt]="product.name" />
+      </div>
+      @if (product.images.length > 1) {
+        <div class="thumbnails">
+          @for (img of product.images; track img; let i = $index) {
+            <button class="thumb-btn" [class.active]="i === selectedImage" (click)="selectImage(i)">
+              <img [src]="img" [alt]="product.name + ' view ' + (i+1)" />
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Info -->
+    <div class="product-info">
+      <p class="brand-tag">{{ product.brand }}</p>
+      <h1 class="product-name">{{ product.name }}</h1>
+      <div class="meta-row">
+        <app-star-rating [rating]="averageRating || product.rating" [count]="reviews.length || product.reviewCount" />
+        <span class="stock-badge" [class.out]="!product.inStock">
+          {{ product.inStock ? 'In Stock' : 'Out of Stock' }}
+        </span>
+      </div>
+
+      <div class="price-block">
+        @if (product.discountPrice) {
+          <span class="price-current">{{ product.discountPrice | currency:'INR':'symbol':'1.0-0' }}</span>
+          <span class="price-orig">{{ product.price | currency:'INR':'symbol':'1.0-0' }}</span>
+          <span class="discount-pct">
+            -{{ ((product.price - product.discountPrice) / product.price * 100).toFixed(0) }}%
+          </span>
+        } @else {
+          <span class="price-current">{{ product.price | currency:'INR':'symbol':'1.0-0' }}</span>
+        }
+      </div>
+
+      <!-- Color Selector -->
+      @if (product.colors.length > 0) {
+        <div class="option-group">
+          <label class="option-label">Color: <strong>{{ selectedColor }}</strong></label>
+          <div class="color-swatches">
+            @for (color of product.colors; track color) {
+              <button class="color-swatch" [class.selected]="selectedColor === color"
+                      (click)="selectColor(color)" [title]="color">
+                {{ color }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Quantity -->
+      <div class="option-group">
+        <label class="option-label">Quantity</label>
+        <app-quantity-input [value]="quantity" (valueChange)="quantity = $event" />
+      </div>
+
+      <!-- Actions -->
+      <div class="action-btns">
+        <button class="btn-cart" [disabled]="!product.inStock" (click)="addToCart(product)">
+          <span class="material-icons">shopping_cart</span>
+          {{ product.inStock ? 'Add to Cart' : 'Out of Stock' }}
+        </button>
+      </div>
+
+      <!-- Specs preview -->
+      <div class="quick-specs">
+        @for (entry of getSpecEntries(product.specs).slice(0,3); track entry.key) {
+          <div class="spec-chip">
+            <span class="spec-key">{{ entry.key }}</span>
+            <span class="spec-val">{{ entry.value }}</span>
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="container tabs-section">
+    <mat-tab-group animationDuration="220ms" class="product-tabs" style="--mat-tab-inactive-label-text-color: #000000;">
+
+      <!-- ── Description ── -->
+      <mat-tab label="Description">
+        <div class="tab-pane pane-inset">
+          <p class="desc-body">{{ product.description }}</p>
+          <ul class="highlights-list">
+            @for (entry of getSpecEntries(product.specs).slice(0, 5); track entry.key) {
+              <li class="highlight-item">
+                <span class="material-icons hi-check">check_circle</span>
+                <span><strong>{{ entry.key }}</strong> — {{ entry.value }}</span>
+              </li>
+            }
+          </ul>
+        </div>
+      </mat-tab>
+
+      <!-- ── Specifications ── -->
+      <mat-tab label="Specifications">
+        <div class="tab-pane">
+          <div class="specs-grid">
+            @for (entry of getSpecEntries(product.specs); track entry.key; let i = $index) {
+              <div class="spec-row" [class.alt]="i % 2 === 1">
+                <span class="spec-label">{{ entry.key }}</span>
+                <span class="spec-value">{{ entry.value }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      </mat-tab>
+
+      <!-- ── Reviews ── -->
+      <mat-tab [label]="'Reviews (' + reviews.length + ')'">
+        <div class="tab-pane pane-inset">
+
+          <!-- Loading -->
+          @if (reviewsLoading) {
+            <div class="rv-loading">
+              <div class="spinner-sm"></div>
+              Loading reviews…
+            </div>
+          } @else {
+
+            <!-- Summary row -->
+            @if (reviews.length > 0) {
+              <div class="rv-summary">
+                <div class="rv-avg-block">
+                  <span class="rv-avg-num">{{ averageRating | number:'1.1-1' }}</span>
+                  <div class="rv-avg-stars">
+                    @for (s of [1,2,3,4,5]; track s) {
+                      <span class="material-icons rv-star"
+                            [class.lit]="s <= averageRating"
+                            [class.half]="s > averageRating && s - 0.5 <= averageRating">star</span>
+                    }
+                  </div>
+                  <span class="rv-avg-sub">{{ reviews.length }} review{{ reviews.length === 1 ? '' : 's' }}</span>
+                </div>
+                <div class="rv-bars">
+                  @for (bar of getRatingBars(); track bar.stars) {
+                    <div class="rv-bar-row">
+                      <span class="rv-bar-label">{{ bar.stars }} ★</span>
+                      <div class="rv-bar-track">
+                        <div class="rv-bar-fill" [style.width.%]="bar.pct"></div>
+                      </div>
+                      <span class="rv-bar-count">{{ bar.count }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- CTA: write review -->
+            @if (isLoggedIn && !myReview && !showReviewForm) {
+              <button class="rv-write-btn" (click)="openReviewForm()">
+                <span class="material-icons">edit</span> Write a Review
+              </button>
+            }
+            @if (!isLoggedIn) {
+              <p class="rv-login-note">
+                <span class="material-icons">info_outline</span>
+                <a routerLink="/login">Log in</a> to leave a review.
+              </p>
+            }
+
+            <!-- My existing review highlight -->
+            @if (myReview) {
+              <div class="review-card my-review">
+                <div class="my-review-badge">
+                  <span class="material-icons">verified_user</span> Your Review
+                </div>
+                <div class="review-header">
+                  <span class="reviewer-name">{{ myReview.name || 'You' }}</span>
+                  <div class="review-stars">
+                    @for (s of [1,2,3,4,5]; track s) {
+                      <span class="material-icons rv-star" [class.lit]="s <= myReview.rating">star</span>
+                    }
+                  </div>
+                  <span class="review-date">{{ myReview.createdAt | date:'mediumDate' }}</span>
+                </div>
+                <p class="review-body">{{ myReview.text }}</p>
+              </div>
+            }
+
+            <!-- Inline review form -->
+            @if (showReviewForm) {
+              <div class="rv-form-card">
+                <h4 class="rv-form-title">Your Review</h4>
+
+                <!-- Star picker -->
+                <div class="rv-star-picker">
+                  <label>Rating</label>
+                  <div class="rv-star-row">
+                    @for (s of [1,2,3,4,5]; track s) {
+                      <button type="button" class="rv-star-btn"
+                              (mouseenter)="hoverStar = s"
+                              (mouseleave)="hoverStar = 0"
+                              (click)="setReviewStar(s)">
+                        <span class="material-icons rv-star"
+                              [class.lit]="s <= (hoverStar || reviewForm.rating)">star</span>
+                      </button>
+                    }
+                    <span class="rv-star-label">{{ reviewForm.rating }}/5</span>
+                  </div>
+                </div>
+
+                <div class="rv-field">
+                  <label>Review</label>
+                  <textarea [(ngModel)]="reviewForm.text" rows="4" placeholder="What did you like or dislike?" maxlength="500"></textarea>
+                </div>
+
+                @if (reviewError) {
+                  <div class="rv-error">
+                    <span class="material-icons">error_outline</span> {{ reviewError }}
+                  </div>
+                }
+
+                <div class="rv-form-actions">
+                  <button type="button" class="rv-cancel-btn" (click)="showReviewForm = false" [disabled]="submittingReview">Cancel</button>
+                  <button type="button" class="rv-submit-btn" (click)="submitReview()" [disabled]="submittingReview">
+                    @if (submittingReview) {
+                      <div class="spinner-sm light"></div> Submitting…
+                    } @else {
+                      <span class="material-icons">send</span> Submit Review
+                    }
+                  </button>
+                </div>
+              </div>
+            }
+
+            <!-- All reviews -->
+            @if (reviews.length === 0 && !showReviewForm) {
+              <div class="rv-empty">
+                <span class="material-icons">rate_review</span>
+                <p>No reviews yet. Be the first to review this product!</p>
+              </div>
+            }
+
+            @for (review of reviews; track review.id) {
+              @if (review.userId !== (myReview?.userId ?? '__none__')) {
+                <div class="review-card">
+                  <div class="review-header">
+                    <span class="reviewer-name">{{ review.name || review.userId }}</span>
+                    <div class="review-stars">
+                      @for (s of [1,2,3,4,5]; track s) {
+                        <span class="material-icons rv-star" [class.lit]="s <= review.rating">star</span>
+                      }
+                    </div>
+                    <span class="review-date">{{ review.createdAt | date:'mediumDate' }}</span>
+                  </div>
+                  <p class="review-body">{{ review.text }}</p>
+                </div>
+              }
+            }
+
+          }
+        </div>
+      </mat-tab>
+
+    </mat-tab-group>
+  </div>
+
+  <!-- Related Products -->
+  @if ((related$ | async)?.length) {
+    <div class="container related-section">
+      <h2 class="section-title">Related Products</h2>
+      <div class="related-scroll">
+        @for (rp of related$ | async; track rp.id) {
+          <div class="related-item">
+            <app-product-card [product]="rp" (addToCart)="onRelatedAddToCart($event)" />
+          </div>
+        }
+      </div>
+    </div>
+  }
+}

@@ -1,0 +1,179 @@
+<div class="account-page">
+  <div class="container">
+    <div class="account-header">
+      <div class="avatar">
+        @if (userInitials) {
+          <span class="avatar-initials">{{ userInitials }}</span>
+        } @else {
+          <span class="material-icons">account_circle</span>
+        }
+      </div>
+      <div class="header-info">
+        <h1>My Account</h1>
+        <p>Manage your profile and orders</p>
+      </div>
+      <button class="logout-btn" (click)="logout()">
+        <span class="material-icons">logout</span>
+        Logout
+      </button>
+    </div>
+
+    <mat-tab-group animationDuration="200ms" class="account-tabs">
+
+      <!-- Profile Tab -->
+      <mat-tab label="Profile">
+        <div class="tab-panel">
+
+          @if (loadingProfile) {
+            <div class="loading-state">
+              <mat-spinner diameter="36" />
+            </div>
+          } @else {
+            <form [formGroup]="profileForm" (ngSubmit)="saveProfile()" class="profile-form">
+
+              <div class="email-badge">
+                <span class="material-icons">email</span>
+                {{ profileForm.get('email')?.value }}
+              </div>
+
+              <div class="form-section">
+                <p class="section-label">Personal</p>
+                <div class="form-grid">
+                  <div class="field-group">
+                    <label>Full Name</label>
+                    <input formControlName="name" placeholder="Your full name" />
+                    @if (profileForm.get('name')!.invalid && profileForm.get('name')!.touched) {
+                      <span class="field-error">Name is required</span>
+                    }
+                  </div>
+                  <div class="field-group">
+                    <label>Phone</label>
+                    <input formControlName="phone" type="tel" placeholder="+91 0000000000" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <p class="section-label">Address</p>
+                <div class="field-group">
+                  <label>Street / Area</label>
+                  <input formControlName="addressLine" placeholder="House no., street, area" />
+                  @if (profileForm.get('addressLine')!.invalid && profileForm.get('addressLine')!.touched) {
+                    <span class="field-error">Address is required</span>
+                  }
+                </div>
+                <div class="form-grid three">
+                  <div class="field-group">
+                    <label>City</label>
+                    <input formControlName="city" placeholder="City" />
+                    @if (profileForm.get('city')!.invalid && profileForm.get('city')!.touched) {
+                      <span class="field-error">Required</span>
+                    }
+                  </div>
+                  <div class="field-group">
+                    <label>State</label>
+                    <input formControlName="state" placeholder="State" />
+                    @if (profileForm.get('state')!.invalid && profileForm.get('state')!.touched) {
+                      <span class="field-error">Required</span>
+                    }
+                  </div>
+                  <div class="field-group">
+                    <label>Pincode</label>
+                    <input formControlName="pincode" maxlength="6" placeholder="000000" />
+                    @if (profileForm.get('pincode')!.invalid && profileForm.get('pincode')!.touched) {
+                      <span class="field-error">6 digits required</span>
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <button type="submit" class="save-btn" [disabled]="saving || profileForm.invalid">
+                @if (saving) {
+                  <mat-spinner diameter="16" />
+                  <span>Saving...</span>
+                } @else {
+                  Save Changes
+                }
+              </button>
+
+            </form>
+          }
+        </div>
+      </mat-tab>
+
+      <!-- Orders Tab -->
+      <mat-tab label="Orders ({{ orders.length }})">
+        <div class="tab-panel">
+          <h2>My Orders</h2>
+          @if (loadingOrders) {
+            <div class="loading-state">
+              <mat-spinner diameter="36" />
+            </div>
+          } @else if (orders.length === 0) {
+            <div class="empty-orders">
+              <span class="material-icons">receipt_long</span>
+              <p>No orders yet</p>
+            </div>
+          } @else {
+            <div class="orders-table">
+              <div class="orders-header">
+                <span></span><span>Order ID</span><span>Date</span><span>Total</span><span>Status</span>
+              </div>
+              @for (order of orders; track order.id) {
+                <div class="order-row" (click)="toggleOrder(order.id)" [class.expanded]="expandedOrderId === order.id">
+                  <span class="expand-icon material-icons">
+                    {{ expandedOrderId === order.id ? 'expand_less' : 'expand_more' }}
+                  </span>
+                  <span class="order-id">#{{ order.id }}</span>
+                  <span class="order-date">{{ order.createdAt | date:'mediumDate' }}</span>
+                  <span class="order-total">{{ order.totalAmount | currency:'INR':'symbol':'1.0-0' }}</span>
+                  <span class="status-chip" [style.background]="statusColors[order.status] + '22'" [style.color]="statusColors[order.status]">
+                    {{ order.status }}
+                  </span>
+                </div>
+                @if (expandedOrderId === order.id) {
+                  <div class="order-items-panel">
+                    <div class="items-panel-header">
+                      <span>Product</span>
+                      <span>Qty</span>
+                      <span>Unit Price</span>
+                      <span>Line Total</span>
+                    </div>
+                    @for (item of order.items; track item.productId) {
+                      <div class="items-panel-row">
+                        <!-- Image -->
+                        @if (productMap[item.productId]?.images?.[0]) {
+                          <a class="item-product-cell" [routerLink]="['/product', item.productId]">
+                            <img
+                              class="item-thumb"
+                              [src]="productMap[item.productId].images[0]"
+                              [alt]="productMap[item.productId].name"
+                            />
+                            <span class="item-name">{{ productMap[item.productId].name }}</span>
+                          </a>
+                        } @else {
+                          <a class="item-product-cell" [routerLink]="['/product', item.productId]">
+                            <div class="item-thumb item-thumb-ph">
+                              <span class="material-icons">image_not_supported</span>
+                            </div>
+                            <span class="item-name">
+                              {{ productMap[item.productId]?.name ?? 'Product #' + item.productId }}
+                            </span>
+                          </a>
+                        }
+                        <span>× {{ item.quantity }}</span>
+                        <span>{{ item.priceAtPurchase | currency:'INR':'symbol':'1.0-0' }}</span>
+                        <span class="item-line-total">{{ item.priceAtPurchase * item.quantity | currency:'INR':'symbol':'1.0-0' }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+              }
+            </div>
+          }
+        </div>
+      </mat-tab>
+
+    </mat-tab-group>
+  </div>
+</div>

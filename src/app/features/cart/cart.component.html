@@ -1,0 +1,185 @@
+<div class="cart-page">
+  <div class="container">
+    <h1 class="page-title">
+      <span class="material-icons">shopping_cart</span>
+      Shopping Cart
+      @if (count$ | async; as count) {
+        <span class="item-count">({{ count }} {{ count === 1 ? 'item' : 'items' }})</span>
+      }
+    </h1>
+
+    @if ((items$ | async)?.length === 0) {
+      <app-empty-state
+        icon="shopping_cart"
+        title="Your cart is empty"
+        message="Looks like you haven't added anything yet."
+        ctaLabel="Start Shopping"
+        (ctaClick)="null" />
+      <div class="empty-cta">
+        <a routerLink="/" class="btn-primary">Browse Products</a>
+      </div>
+    } @else {
+      <div class="cart-layout">
+        <!-- Items -->
+        <div class="cart-items">
+          @for (item of items$ | async; track item.productId + item.selectedColor) {
+            <div class="cart-row">
+              <img [src]="item.product.images[0]" [alt]="item.product.name" class="item-img"
+                   [routerLink]="['/product', item.productId]" />
+              <div class="item-info">
+                <a [routerLink]="['/product', item.productId]" class="item-name">{{ item.product.name }}</a>
+                <p class="item-brand">{{ item.product.brand }}</p>
+                <p class="item-color">Color: <strong>{{ item.selectedColor }}</strong></p>
+                <div class="item-actions-mobile">
+                  <app-quantity-input [value]="item.quantity" (valueChange)="updateQty(item, $event)" />
+                  <button class="remove-btn" (click)="removeItem(item)">
+                    <span class="material-icons">delete_outline</span>
+                  </button>
+                </div>
+              </div>
+              <div class="item-qty-desktop">
+                <app-quantity-input [value]="item.quantity" (valueChange)="updateQty(item, $event)" />
+              </div>
+              <div class="item-price-col">
+                <span class="unit-price">{{ (item.product.discountPrice ?? item.product.price) | currency:'INR':'symbol':'1.0-0' }}</span>
+                <span class="line-total">{{ getLineTotal(item) | currency:'INR':'symbol':'1.0-0' }}</span>
+              </div>
+              <button class="remove-btn-desktop" (click)="removeItem(item)" aria-label="Remove">
+                <span class="material-icons">close</span>
+              </button>
+            </div>
+          }
+          <div class="cart-footer-row">
+            <button class="clear-btn" (click)="clearCart()">
+              <span class="material-icons">delete_sweep</span> Clear Cart
+            </button>
+            <a routerLink="/" class="continue-btn">
+              <span class="material-icons">arrow_back</span> Continue Shopping
+            </a>
+          </div>
+        </div>
+
+        <!-- Summary -->
+        @if (total$ | async; as subtotal) {
+          <div class="order-summary">
+            <h2>Order Summary</h2>
+            <div class="summary-row"><span>Subtotal</span><span>{{ subtotal | currency:'INR':'symbol':'1.0-0' }}</span></div>
+            <div class="summary-row"><span>Shipping</span><span>{{ getShipping() | currency:'INR':'symbol':'1.0-0' }}</span></div>
+            <div class="summary-row"><span>Tax (18% GST)</span><span>{{ getTax(subtotal) | currency:'INR':'symbol':'1.0-0' }}</span></div>
+            <div class="summary-divider"></div>
+            <div class="summary-row total-row">
+              <span>Total</span>
+              <span class="total-price">{{ getOrderTotal(subtotal) | currency:'INR':'symbol':'1.0-0' }}</span>
+            </div>
+            <button class="checkout-btn" (click)="openPayment()" [disabled]="checkingOut">
+              @if (checkingOut) {
+                <mat-spinner diameter="18" />
+                <span>Placing Order...</span>
+              } @else {
+                <span class="material-icons">lock</span>
+                Proceed to Checkout
+              }
+            </button>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>
+
+<!-- ── Payment Modal ── -->
+@if (showPayment) {
+  <div class="pay-backdrop" (click)="showPayment = false">
+    <div class="pay-modal" (click)="$event.stopPropagation()">
+
+      <div class="pay-modal-hdr">
+        <div>
+          <h3 class="pay-modal-title">Payment</h3>
+          <p class="pay-modal-sub">Demo only — no real charges will be made</p>
+        </div>
+        <button class="pay-close-btn" (click)="showPayment = false" aria-label="Close">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="pay-tabs">
+        <button class="pay-tab" [class.active]="payTab === 'card'" (click)="payTab = 'card'; clearPayError()">
+          <span class="material-icons">credit_card</span> Card
+        </button>
+        <button class="pay-tab" [class.active]="payTab === 'upi'" (click)="payTab = 'upi'; clearPayError()">
+          <span class="material-icons">qr_code</span> UPI
+        </button>
+      </div>
+
+      <!-- Card panel -->
+      @if (payTab === 'card') {
+        <div class="pay-body">
+          <div class="pay-field">
+            <label>Cardholder name</label>
+            <input type="text" [(ngModel)]="card.name" placeholder="Name on card" />
+          </div>
+          <div class="pay-field">
+            <label>Card number</label>
+            <input type="text" [(ngModel)]="card.number"
+                   (input)="fmtCardNumber($event)"
+                   placeholder="1234 5678 9012 3456"
+                   maxlength="19"
+                   class="mono" />
+          </div>
+          <div class="pay-field-row">
+            <div class="pay-field">
+              <label>Expiry</label>
+              <input type="text" [(ngModel)]="card.expiry"
+                     (input)="fmtExpiry($event)"
+                     placeholder="MM / YY"
+                     maxlength="7" />
+            </div>
+            <div class="pay-field">
+              <label>CVV</label>
+              <input type="password" [(ngModel)]="card.cvv"
+                     placeholder="•••"
+                     maxlength="4" />
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- UPI panel -->
+      @if (payTab === 'upi') {
+        <div class="pay-body">
+          <div class="pay-field">
+            <label>UPI ID</label>
+            <input type="text" [(ngModel)]="upiId" placeholder="yourname@upi" />
+          </div>
+          <div class="pay-info-note">
+            <span class="material-icons">info_outline</span>
+            Enter any UPI ID — this is a demo and no transaction will occur.
+          </div>
+        </div>
+      }
+
+      <!-- Error -->
+      @if (payError) {
+        <div class="pay-error">
+          <span class="material-icons">error_outline</span>
+          {{ payError }}
+        </div>
+      }
+
+      <div class="pay-modal-footer">
+        <button class="pay-cancel-btn" (click)="showPayment = false">Cancel</button>
+        <button class="pay-submit-btn" (click)="submitPayment()" [disabled]="checkingOut">
+          @if (checkingOut) {
+            <mat-spinner diameter="16" />
+            <span>Processing…</span>
+          } @else {
+            <span class="material-icons">lock</span>
+            Pay now
+          }
+        </button>
+      </div>
+
+    </div>
+  </div>
+}
